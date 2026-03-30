@@ -30,9 +30,11 @@ class ProductImporter extends Component
         return response()->streamDownload(function () {
             $file = fopen('php://output', 'w');
             fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF)); 
-            // 🌟 إضافة expiry_date في النهاية
-            fputcsv($file, ['name', 'category', 'sku', 'base_unit', 'cost_price', 'selling_price', 'wholesale_unit', 'wholesale_barcode', 'wholesale_price', 'expiry_date']);
-            fputcsv($file, ['مثال: لبن كابو 1 كيلو', 'الألبان', '628123', 'حبة', '3800', '4200', 'كرتونة', '628124', '49000', '2026-12-31']);
+            
+            // 🌟 إضافة عمود opening_stock للكمية الافتتاحية
+            fputcsv($file, ['name', 'category', 'sku', 'base_unit', 'cost_price', 'selling_price', 'wholesale_unit', 'wholesale_barcode', 'wholesale_price', 'opening_stock', 'expiry_date']);
+            
+            fputcsv($file, ['مثال: لبن كابو 1 كيلو', 'الألبان', '628123', 'حبة', '3800', '4200', 'كرتونة', '628124', '49000', '150', '2026-12-31']);
             fclose($file);
         }, 'products_template.csv');
     }
@@ -118,7 +120,18 @@ class ProductImporter extends Component
         $finalUnitDict = array_flip($this->dbUnits);
         foreach ($this->unitMappings as $csvName => $decision) {
             if ($decision === 'NEW') {
-                $newUnit = Unit::create(['name' => $csvName, 'type' => 'quantity', 'conversion_rate' => 1]);
+                
+                // 🌟 السحر هنا: استخراج الرقم من اسم الوحدة كمعامل تحويل
+                $conversionRate = 1; // الافتراضي
+                if (preg_match('/\d+/', $csvName, $matches)) {
+                    $conversionRate = (float) $matches[0];
+                }
+
+                $newUnit = Unit::create([
+                    'name' => $csvName, 
+                    'type' => 'quantity', 
+                    'conversion_rate' => $conversionRate 
+                ]);
                 $finalUnitDict[$csvName] = $newUnit->id;
             } else {
                 $finalUnitDict[$csvName] = $decision; 
@@ -134,56 +147,106 @@ class ProductImporter extends Component
                     $data = array_combine($header, $row);
                 }
 
-                // 🌟 السحر هنا: استخدام المتغيرات بمرونة تامة (بحث بالاسم أو بالترتيب)
                 $pName = $data['product_name'] ?? $data['name'] ?? $row[0] ?? null;
                 $pCat  = $data['category'] ?? $data['category_id'] ?? $row[1] ?? 'عام';
-                $pSku  = $data['retail_barcode'] ?? $data['sku'] ?? $row[2] ?? '';
+                $pSku  = trim($data['retail_barcode'] ?? $data['sku'] ?? $row[2] ?? '');
                 $pBaseUnit = $data['base_unit'] ?? $data['base_unit_id'] ?? $row[3] ?? 'حبة';
                 $pCost = $data['cost_price'] ?? $data['current_cost_price'] ?? $row[4] ?? 0;
                 $pSell = $data['retail_price'] ?? $data['selling_price'] ?? $data['current_selling_price'] ?? $row[5] ?? 0;
                 $pWholesaleUnit = $data['wholesale_unit'] ?? $row[6] ?? '';
-                $pWholesaleSku  = $data['wholesale_barcode'] ?? $row[7] ?? '';
+                $pWholesaleSku  = trim($data['wholesale_barcode'] ?? $row[7] ?? '');
                 $pWholesalePrice = $data['wholesale_price'] ?? $row[8] ?? '';
-                $pExpiry = $data['expiry_date'] ?? $row[9] ?? null; // 🌟 جلب التاريخ
+                
+                $pStock = $data['opening_stock'] ?? $data['quantity'] ?? $row[9] ?? 0;
+                $pExpiry = $data['expiry_date'] ?? $data['expire'] ?? $row[10] ?? null;
+
+                // ==========================================
+                // 🌟 تصحيح تسعير الشراء (التقسيم التلقائي + إزالة الكسور نهائياً)
+                // ==========================================
+                $boxQuantity = 1;
+                // 1. استخراج العدد من وحدة الجملة
+                if (!empty($pWholesaleUnit) && preg_match('/\d+/', $pWholesaleUnit, $matches)) {
+                    $boxQuantity = (float) $matches[0];
+                }
+
+                $pCost = (float) $pCost;
+                
+                // 2. تقسيم السعر إذا كان هناك كرتونة
+                if ($boxQuantity > 1 && $pCost > 0) {
+                    // تقسيم سعر الكرتونة على عدد الحبات، والتقريب لأقرب رقم صحيح (بدون كسور)
+                    $pCost = round($pCost / $boxQuantity, 0);
+                } else {
+                    // تأمين: حتى لو لم يتم التقسيم، نضمن إزالة أي كسور
+                    $pCost = round($pCost, 0);
+                }
+                
+                // 3. تأمين أسعار البيع أيضاً لمنع أي كسور فيها
+                $pSell = round((float) $pSell, 0);
+                if ($pWholesalePrice !== '') {
+                    $pWholesalePrice = round((float) $pWholesalePrice, 0);
+                }
+                // ==========================================
 
                 if (empty($pName)) {
                     throw new \Exception('اسم المنتج مفقود في هذا السطر.');
                 }
 
-                DB::transaction(function () use ($pName, $pCat, $pSku, $pBaseUnit, $pCost, $pSell, $pWholesaleUnit, $pWholesaleSku, $pWholesalePrice, $pExpiry, $finalCategoryDict, $finalUnitDict) {
+                DB::transaction(function () use ($pName, $pCat, $pSku, $pBaseUnit, $pCost, $pSell, $pWholesaleUnit, $pWholesaleSku, $pWholesalePrice, $pStock, $pExpiry, $finalCategoryDict, $finalUnitDict) {
                     
                     $catId = $finalCategoryDict[trim($pCat)] ?? null;
                     $baseUnitId = $finalUnitDict[trim($pBaseUnit)] ?? null;
                     
-                    // تنظيف وتنسيق التاريخ إن وُجد
+                    // 🌟 الحل الجذري لمشكلة التواريخ (تحويل / إلى -)
                     $cleanExpiry = null;
-                    if (!empty($pExpiry) && strtotime($pExpiry)) {
-                        $cleanExpiry = date('Y-m-d', strtotime(trim($pExpiry)));
+                    if (!empty($pExpiry)) {
+                        $fixedDate = str_replace('/', '-', trim($pExpiry)); 
+                        if (strtotime($fixedDate)) {
+                            $cleanExpiry = date('Y-m-d', strtotime($fixedDate));
+                        }
                     }
 
-                    $product = Product::updateOrCreate(
-                        ['sku' => trim($pSku)],
-                        [
-                            'name' => trim($pName),
-                            'category_id' => $catId,
-                            'base_unit_id' => $baseUnitId,
-                            'current_cost_price' => (float) $pCost,
-                            'current_selling_price' => (float) $pSell,
-                            'current_stock' => 0,
-                            'expiry_date' => $cleanExpiry, // 🌟 حفظ التاريخ
-                            'has_fraction' => true,
-                            'is_active' => true,
-                        ]
-                    );
+                    // 🌟 البحث الذكي وتوليد الباركود المفقود
+                    $product = null;
+                    if (!empty($pSku)) {
+                        $product = Product::where('sku', $pSku)->first();
+                    }
+                    if (!$product) {
+                        $product = Product::where('name', trim($pName))->first();
+                    }
 
-                    if (!empty($pWholesaleUnit) && !empty($pWholesalePrice)) {
+                    $finalSku = !empty($pSku) ? $pSku : ($product ? $product->sku : rand(10000000, 99999999));
+
+                    $productData = [
+                        'name' => trim($pName),
+                        'sku' => $finalSku,
+                        'category_id' => $catId,
+                        'base_unit_id' => $baseUnitId,
+                        'current_cost_price' => (float) $pCost,
+                        'current_selling_price' => (float) $pSell,
+                        'current_stock' => (float) $pStock,
+                        'expiry_date' => $cleanExpiry, 
+                        'has_fraction' => true,
+                        'is_active' => true,
+                    ];
+
+                    if ($product) {
+                        $product->update($productData);
+                    } else {
+                        $product = Product::create($productData);
+                    }
+
+                    // 🌟 معالجة وحدة الجملة والباركود الخاص بها
+                    if (!empty($pWholesaleUnit)) {
                         $wholesaleUnitId = $finalUnitDict[trim($pWholesaleUnit)] ?? null;
+                        
+                        $productUnit = ProductUnit::where('product_id', $product->id)->where('unit_id', $wholesaleUnitId)->first();
+                        $finalWholesaleSku = !empty($pWholesaleSku) ? $pWholesaleSku : ($productUnit ? $productUnit->barcode : rand(10000000, 99999999));
 
                         ProductUnit::updateOrCreate(
                             ['product_id' => $product->id, 'unit_id' => $wholesaleUnitId],
                             [
-                                'barcode' => trim($pWholesaleSku ?: rand(10000000,99999999)),
-                                'specific_selling_price' => (float) $pWholesalePrice
+                                'barcode' => $finalWholesaleSku,
+                                'specific_selling_price' => $pWholesalePrice !== '' ? (float) $pWholesalePrice : null
                             ]
                         );
                     }

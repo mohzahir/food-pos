@@ -219,10 +219,12 @@ class PosScreen extends Component
         DB::transaction(function () use (&$saleId, $remaining_amount, $payment_status, $total_paid, $method) {
             
             $sale = Sale::create([
+                'user_id' => auth()->id(), 
                 'receipt_number' => 'INV-' . time(),
                 'total_amount' => $this->total,
                 'customer_id' => empty($this->customer_id) ? null : $this->customer_id,
                 'paid_amount' => $total_paid,
+                'remaining_amount' => $remaining_amount, 
                 'paid_cash' => (float) $this->paid_cash,       
                 'paid_bankak' => (float) $this->paid_bankak,   
                 'payment_method' => $method,                   
@@ -234,14 +236,33 @@ class PosScreen extends Component
             $saleId = $sale->id;
 
             foreach ($this->cart as $item) {
+                // 1. 🌟 جلب المنتج والوحدة من قاعدة البيانات لحساب التكلفة الصحيحة
+                $product = Product::find($item['product_id']);
+                $unit = Unit::find($item['unit_id']);
+                
+                // 2. 🌟 تحديد معامل التحويل (إذا كان قطاعي يكون 1، إذا كرتونة 12 سيكون 12)
+                $conversionRate = $unit ? $unit->conversion_rate : 1;
+                
+                // 3. 🌟 حساب تكلفة الوحدة المباعة (تكلفة الحبة × معامل تحويل الوحدة)
+                // مثال: كرتونة زيت (12 حبة). التكلفة للحبة 1000. إذن تكلفة الكرتونة المباعة = 12000.
+                $itemCostPrice = ($product ? $product->current_cost_price : 0) * $conversionRate;
+
+                // 4. 🌟 حفظ العنصر مع التكلفة
                 SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $item['product_id'],
                     'unit_id' => $item['unit_id'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
+                    
+                    // 🌟 الحقل الجديد الذي تم إضافته لتقرير الأرباح
+                    'cost_price' => $itemCostPrice, 
+                    
                     'subtotal' => $item['unit_price'] * $item['quantity'],
                 ]);
+                
+                // ⚠️ (ملاحظة هامة للمستقبل): هنا يجب أن تضيف كود لخصم الكمية من المخزون
+                $product->decrement('current_stock', $item['quantity'] * $conversionRate);
             }
 
             if ($remaining_amount > 0 && !empty($this->customer_id)) {

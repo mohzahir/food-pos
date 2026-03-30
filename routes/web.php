@@ -43,10 +43,11 @@ Route::post('/logout', function () {
 // مسارات محمية بالترخيص (CheckLicense)
 // ==========================================
 Route::middleware([\App\Http\Middleware\CheckLicense::class])->group(function () {
-    
+
     // === مسارات مسموحة للجميع (الكاشير والمدير) بشرط تسجيل الدخول === //
     Route::middleware(['auth'])->group(function () {
         Route::get('/pos', PosScreen::class)->name('pos');
+        // Route::get('/shift-closing', \App\Livewire\ShiftClosing::class)->name('shift.close');
         
         Route::get('/receipt/{sale}', function (Sale $sale) {
             $sale->load('items.product', 'items.unit', 'customer'); 
@@ -65,11 +66,39 @@ Route::middleware([\App\Http\Middleware\CheckLicense::class])->group(function ()
         Route::get('/customers/{customer}/ledger', CustomerLedger::class)->name('customers.ledger'); // كشوفات الحساب
         Route::get('/returns', ReturnScreen::class)->name('returns'); // شاشة المرتجعات
         Route::get('/inventory', InventoryScreen::class)->name('inventory'); // شاشة المخزون
+        Route::get('/inventory/movements', \App\Livewire\InventoryMovementScreen::class)->name('inventory.movements');
         Route::get('/products-manager', ProductManager::class)->name('products.manager'); // إدارة المنتجات
         Route::get('/expiry-radar', ExpiryRadar::class)->name('expiry.radar');
         Route::get('/expenses', ExpenseManager::class)->name('expenses');
         Route::get('/treasury', App\Livewire\TreasuryDashboard::class)->name('treasury');
+        Route::get('/reports/daily-profit', App\Livewire\DailyProfitReport::class)->name('reports.daily-profit');
         Route::get('/suppliers', \App\Livewire\SuppliersList::class)->name('suppliers.index');
+        Route::get('/settings', \App\Livewire\StoreSettings::class)->name('settings');
+        Route::get('/print/ledger/{id}', function ($id) {
+            $customer = \App\Models\Customer::findOrFail($id);
+            $payments = $customer->payments()->latest()->get();
+            // جلب كل فواتير العميل (الخالصة والآجلة) لتظهر في كشف الحساب
+            $sales = \App\Models\Sale::where('customer_id', $id)->latest()->get();
+            // جلب إعدادات المتجر (اسم المحل وغيره) التي برمجناها سابقاً
+            $settings = \App\Models\Setting::first(); 
+
+            return view('print.ledger', compact('customer', 'payments', 'sales', 'settings'));
+        })->name('print.ledger')->middleware('auth');
+        Route::get('/print/purchase/{id}', function ($id) {
+            // جلب الفاتورة مع تفاصيل الأصناف والمنتجات المرتبطة بها
+            $purchase = \App\Models\Purchase::with(['items.product', 'items.unit'])->findOrFail($id);
+            // جلب إعدادات المتجر
+            $settings = \App\Models\Setting::first(); 
+
+            return view('print.purchase', compact('purchase', 'settings'));
+        })->name('print.purchase')->middleware('auth');
     });
+
+
+
+
+    Route::get('/print/quotation', function () {
+        return view('print.quotation');
+    })->name('print.quotation');
 
 });

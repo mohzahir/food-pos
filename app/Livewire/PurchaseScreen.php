@@ -240,10 +240,14 @@ class PurchaseScreen extends Component
 
             $purchase = Purchase::create([
                 'supplier_id' => empty($this->supplier_id) ? null : $this->supplier_id,
-                'supplier_name' => $supplierName, // الحقل النصي القديم
+                'supplier_name' => $supplierName, 
                 'purchase_date' => $this->purchase_date ?: date('Y-m-d'),
                 'total_amount' => $this->total_amount,
                 'paid_amount' => $total_paid,
+                
+                // 🌟 هذا هو السطر الذي كان مفقوداً وتمت إضافته!
+                'remaining_amount' => $remaining, 
+                
                 'paid_cash' => (float) $this->paid_cash,
                 'paid_bankak' => (float) $this->paid_bankak,
                 'payment_method' => $method,
@@ -284,13 +288,19 @@ class PurchaseScreen extends Component
             }
         });
 
-        session()->flash('success', 'تم حفظ فاتورة المشتريات، وتحديث المخزون والأسعار بنجاح!');
+        // session()->flash('success', 'تم حفظ فاتورة المشتريات، وتحديث المخزون والأسعار بنجاح!');
         
         $this->clearCart();
         $this->supplier_id = '';
         $this->transaction_number = '';
         $this->resetItemFields();
         $this->selected_product = '';
+        // مسح السلة بعد الحفظ الناجح
+        $this->cart = [];
+        $this->total_amount = 0;
+
+        // 🌟 السطر السحري: التوجيه لشاشة سجل المشتريات مع رسالة نجاح
+        return redirect()->route('purchases.history')->with('success', '✅ تم حفظ فاتورة المشتريات وتحديث أسعار المخزن بنجاح!');
     }
 
     public function render()
