@@ -1,20 +1,20 @@
 @echo off
 COLOR 0A
-TITLE سيرفر نظام المبيعات (تطوير: Mohammed Zahir)
+TITLE POS & ERP System Server (Developed by: Mohammed Zahir)
 echo ==========================================================
-echo               نظام إدارة المبيعات والمخزون (ERP)
+echo           POS and Inventory Management System (ERP)
 echo ==========================================================
 echo.
 
-echo [1/2] جاري تشغيل خادم النظام (بدون حاجة لبرامج خارجية)...
-:: تشغيل سيرفر لارافيل مصغراً
+echo [1/2] Starting the system server...
+:: Starting Laravel server minimized
 start /MIN php artisan serve
 
-:: ننتظر 3 ثواني لضمان اشتغال السيرفر
+:: Waiting for 3 seconds to ensure the server is up
 timeout /t 3 /nobreak > NUL
 
-echo [2/2] جاري فتح واجهة النظام...
-:: فتح متصفح جوجل كروم
+echo [2/2] Opening the system interface...
+:: Opening Google Chrome
 start chrome "http://127.0.0.1:8000" --start-maximized
 
 exit

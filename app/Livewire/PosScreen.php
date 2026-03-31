@@ -31,7 +31,6 @@ class PosScreen extends Component
     public $newCustomerName = '';
     public $newCustomerPhone = '';
 
-    // دالة تعمل عند تحميل الشاشة لأول مرة
     public function mount()
     {
         // استرجاع السلة من الـ Session إذا كانت موجودة
@@ -41,7 +40,6 @@ class PosScreen extends Component
         }
     }
 
-    // --- دوال العميل السريع ---
     public function openCustomerModal()
     {
         $this->newCustomerName = '';
@@ -68,12 +66,10 @@ class PosScreen extends Component
             'balance' => 0,
         ]);
 
-        // اختيار العميل الجديد تلقائياً في الفاتورة الحالية
         $this->customer_id = $customer->id;
         $this->closeCustomerModal();
         session()->flash('success_customer', 'تم إضافة العميل بنجاح واختياره للفاتورة!');
     }
-
 
     public function selectCategory($categoryId)
     {
@@ -176,7 +172,6 @@ class PosScreen extends Component
         $this->paid_cash = (int) $this->total; 
         $this->paid_bankak = 0;
 
-        // --- حفظ السلة في الـ Session كلما تغير الإجمالي ---
         session()->put('pos_cart', $this->cart);
     }
 
@@ -186,12 +181,11 @@ class PosScreen extends Component
         $this->calculateTotal();
     }
     
-    // مسح السلة يدوياً
     public function clearCart()
     {
         $this->cart = [];
         $this->calculateTotal();
-        session()->forget('pos_cart'); // مسح من الـ Session
+        session()->forget('pos_cart'); 
     }
 
     public function checkout()
@@ -236,33 +230,22 @@ class PosScreen extends Component
             $saleId = $sale->id;
 
             foreach ($this->cart as $item) {
-                // 1. 🌟 جلب المنتج والوحدة من قاعدة البيانات لحساب التكلفة الصحيحة
                 $product = Product::find($item['product_id']);
                 $unit = Unit::find($item['unit_id']);
                 
-                // 2. 🌟 تحديد معامل التحويل (إذا كان قطاعي يكون 1، إذا كرتونة 12 سيكون 12)
                 $conversionRate = $unit ? $unit->conversion_rate : 1;
-                
-                // 3. 🌟 حساب تكلفة الوحدة المباعة (تكلفة الحبة × معامل تحويل الوحدة)
-                // مثال: كرتونة زيت (12 حبة). التكلفة للحبة 1000. إذن تكلفة الكرتونة المباعة = 12000.
                 $itemCostPrice = ($product ? $product->current_cost_price : 0) * $conversionRate;
 
-                // 4. 🌟 حفظ العنصر مع التكلفة
+                // بمجرد تنفيذ هذا السطر سيقوم الـ Observer بخصم الكمية الصحيحة تلقائياً
                 SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $item['product_id'],
                     'unit_id' => $item['unit_id'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
-                    
-                    // 🌟 الحقل الجديد الذي تم إضافته لتقرير الأرباح
                     'cost_price' => $itemCostPrice, 
-                    
                     'subtotal' => $item['unit_price'] * $item['quantity'],
                 ]);
-                
-                // ⚠️ (ملاحظة هامة للمستقبل): هنا يجب أن تضيف كود لخصم الكمية من المخزون
-                $product->decrement('current_stock', $item['quantity'] * $conversionRate);
             }
 
             if ($remaining_amount > 0 && !empty($this->customer_id)) {
@@ -273,14 +256,13 @@ class PosScreen extends Component
             }
         });
 
-        // --- مسح السلة بعد إتمام البيع ---
         $this->cart = [];
         $this->total = 0;
         $this->customer_id = '';
         $this->payment_method = 'cash';
         $this->paid_amount = 0;
         $this->transaction_number = '';
-        session()->forget('pos_cart'); // مسح من الـ Session
+        session()->forget('pos_cart'); 
         
         return redirect()->route('receipt.show', $saleId);
     }

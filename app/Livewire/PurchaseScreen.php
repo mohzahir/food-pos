@@ -8,12 +8,11 @@ use App\Models\Unit;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
-use App\Models\Supplier; // الموديل الجديد
+use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 
 class PurchaseScreen extends Component
 {
-    // تغيير من supplier_name إلى supplier_id
     public $supplier_id = '';
     public $purchase_date;
     
@@ -35,7 +34,6 @@ class PurchaseScreen extends Component
     public $paid_bankak = 0; 
     public $transaction_number = '';
 
-    // --- متغيرات المورد السريع ---
     public $isSupplierModalOpen = false;
     public $newSupplierName = '';
     public $newSupplierCompany = '';
@@ -45,14 +43,12 @@ class PurchaseScreen extends Component
     {
         $this->purchase_date = date('Y-m-d');
         
-        // استرجاع السلة من الـ Session إذا كانت موجودة
         if (session()->has('purchase_cart')) {
             $this->cart = session('purchase_cart');
             $this->calculateTotal();
         }
     }
 
-    // --- دوال المورد السريع ---
     public function openSupplierModal()
     {
         $this->newSupplierName = '';
@@ -82,13 +78,11 @@ class PurchaseScreen extends Component
             'balance' => 0,
         ]);
 
-        // اختيار المورد الجديد تلقائياً في الفاتورة الحالية
         $this->supplier_id = $supplier->id;
         $this->closeSupplierModal();
         session()->flash('success_supplier', 'تم إضافة المورد بنجاح واختياره للفاتورة!');
     }
 
-    // --- دوال المنتجات والسلة ---
     public function updatedSelectedProduct($productId)
     {
         $this->resetItemFields();
@@ -146,19 +140,35 @@ class PurchaseScreen extends Component
         $unit = Unit::find($this->selected_unit);
         $subtotal = round($this->quantity * $this->unit_cost_price, 0);
         
-        $this->cart[] = [
-            'product_id' => $product->id,
-            'product_name' => $product->name,
-            'unit_id' => $unit->id,
-            'unit_name' => $unit->name,
-            'conversion_rate' => $unit->conversion_rate,
-            'quantity' => $this->quantity,
-            'unit_cost_price' => $this->unit_cost_price,
-            'new_unit_selling_price' => $this->new_unit_selling_price,
-            'expiry_date' => $this->expiry_date ?: null,
-            'subtotal' => $subtotal,
-            'wholesale_prices' => $this->wholesale_prices, 
-        ];
+        // فحص ذكي لمنع تكرار نفس المنتج وتكرار الإضافة
+        $existingIndex = null;
+        foreach ($this->cart as $index => $item) {
+            if ($item['product_id'] == $product->id && $item['unit_id'] == $unit->id) {
+                $existingIndex = $index;
+                break;
+            }
+        }
+
+        if ($existingIndex !== null) {
+            $this->cart[$existingIndex]['quantity'] += $this->quantity;
+            $this->cart[$existingIndex]['subtotal'] += $subtotal;
+            $this->cart[$existingIndex]['unit_cost_price'] = $this->unit_cost_price;
+            $this->cart[$existingIndex]['new_unit_selling_price'] = $this->new_unit_selling_price;
+        } else {
+            $this->cart[] = [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'unit_id' => $unit->id,
+                'unit_name' => $unit->name,
+                'conversion_rate' => $unit->conversion_rate,
+                'quantity' => $this->quantity,
+                'unit_cost_price' => $this->unit_cost_price,
+                'new_unit_selling_price' => $this->new_unit_selling_price,
+                'expiry_date' => $this->expiry_date ?: null,
+                'subtotal' => $subtotal,
+                'wholesale_prices' => $this->wholesale_prices, 
+            ];
+        }
 
         $this->calculateTotal();
         $this->resetItemFields();
@@ -172,7 +182,6 @@ class PurchaseScreen extends Component
         $this->calculateTotal();
     }
 
-    // مسح السلة يدوياً
     public function clearCart()
     {
         $this->cart = [];
@@ -188,7 +197,6 @@ class PurchaseScreen extends Component
         $this->paid_cash = $this->total_amount;
         $this->paid_bankak = 0;
 
-        // حفظ السلة في الـ Session
         session()->put('purchase_cart', $this->cart);
     }
     
@@ -226,13 +234,11 @@ class PurchaseScreen extends Component
 
         DB::transaction(function () use ($total_paid, $remaining, $status, $method) {
             
-            // جلب اسم المورد للحقل القديم (للحفاظ على التوافقية)
             $supplierName = null;
             if (!empty($this->supplier_id)) {
                 $supplier = Supplier::find($this->supplier_id);
                 $supplierName = $supplier ? $supplier->name : null;
                 
-                // إضافة الدين لرصيد المورد إذا وجد
                 if ($remaining > 0 && $supplier) {
                     $supplier->increment('balance', $remaining);
                 }
@@ -244,10 +250,7 @@ class PurchaseScreen extends Component
                 'purchase_date' => $this->purchase_date ?: date('Y-m-d'),
                 'total_amount' => $this->total_amount,
                 'paid_amount' => $total_paid,
-                
-                // 🌟 هذا هو السطر الذي كان مفقوداً وتمت إضافته!
                 'remaining_amount' => $remaining, 
-                
                 'paid_cash' => (float) $this->paid_cash,
                 'paid_bankak' => (float) $this->paid_bankak,
                 'payment_method' => $method,
@@ -256,6 +259,7 @@ class PurchaseScreen extends Component
             ]);
 
             foreach ($this->cart as $item) {
+                // بمجرد تنفيذ هذا السطر، سيستيقظ الـ Observer ليقوم بتحديث المخزون والأسعار الأساسية تلقائياً
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'product_id' => $item['product_id'],
@@ -266,18 +270,7 @@ class PurchaseScreen extends Component
                     'expiry_date' => $item['expiry_date'], 
                 ]);
 
-                $product = Product::find($item['product_id']);
-                
-                $stockToAdd = $item['quantity'] * $item['conversion_rate'];
-                $baseCost = $item['unit_cost_price'] / $item['conversion_rate'];
-                $baseRetail = $item['new_unit_selling_price'] / $item['conversion_rate'];
-
-                $product->increment('current_stock', $stockToAdd);
-                $product->update([
-                    'current_cost_price' => $baseCost,
-                    'current_selling_price' => $baseRetail,
-                ]);
-
+                // 🌟 هنا نقوم فقط بتحديث تسعيرات الجملة المخصصة (لأن الـ Observer لا يعرف عنها شيئاً)
                 if (!empty($item['wholesale_prices'])) {
                     foreach ($item['wholesale_prices'] as $recordId => $newPrice) {
                         ProductUnit::where('id', $recordId)->update([
@@ -288,18 +281,14 @@ class PurchaseScreen extends Component
             }
         });
 
-        // session()->flash('success', 'تم حفظ فاتورة المشتريات، وتحديث المخزون والأسعار بنجاح!');
-        
         $this->clearCart();
         $this->supplier_id = '';
         $this->transaction_number = '';
         $this->resetItemFields();
         $this->selected_product = '';
-        // مسح السلة بعد الحفظ الناجح
         $this->cart = [];
         $this->total_amount = 0;
 
-        // 🌟 السطر السحري: التوجيه لشاشة سجل المشتريات مع رسالة نجاح
         return redirect()->route('purchases.history')->with('success', '✅ تم حفظ فاتورة المشتريات وتحديث أسعار المخزن بنجاح!');
     }
 
@@ -307,7 +296,7 @@ class PurchaseScreen extends Component
     {
         return view('components.purchase-screen', [
             'products' => Product::where('is_active', true)->orderBy('name')->get(),
-            'suppliers' => Supplier::orderBy('name')->get(), // جلب قائمة الموردين
+            'suppliers' => Supplier::orderBy('name')->get(),
         ]);
     }
 }

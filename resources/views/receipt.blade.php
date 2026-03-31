@@ -8,6 +8,10 @@
         /* إعدادات الخطوط لتناسب الطابعات الحرارية (بدون هوامش زائدة) */
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
         
+        * {
+            box-sizing: border-box; /* 🌟 مهم جداً لمنع خروج النصوص خارج حدود الورقة 🌟 */
+        }
+
         body {
             font-family: 'Cairo', sans-serif;
             font-size: 13px; /* حجم خط ممتاز لطابعات 80mm */
@@ -18,8 +22,7 @@
         }
 
         .ticket {
-            width: 78mm; /* عرض الطابعة 80mm (نترك 2mm هامش أمان) */
-            max-width: 78mm;
+            width: 80mm; 
             margin: 20px auto;
             background: #fff;
             padding: 5mm;
@@ -123,35 +126,40 @@
         .btn-back { background: #3b82f6; color: white; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3); }
         .btn:hover { opacity: 0.9; }
 
-        /* إعدادات الطباعة الحقيقية */
+        /* إعدادات الطباعة الحقيقية للطابعة الحرارية */
         @media print {
             @page { 
                 margin: 0; 
-                /* هذا يخبر الويندوز أن هذه ورقة حرارية متصلة */
                 size: 80mm auto; 
             }
-            body { background-color: #fff; }
-            .ticket { 
+            body { 
+                background-color: #fff; 
                 margin: 0; 
+                padding: 0;
+            }
+            .ticket { 
+                margin: 0 auto; 
                 box-shadow: none; 
                 border-radius: 0; 
-                padding: 0 3mm; /* هامش داخلي صغير للورق */
-                width: 74mm; 
+                padding: 2mm 0; /* مسحنا الهامش الجانبي واكتفينا بالعلوي والسفلي */
+                width: 72mm; /* 🌟 العرض الفعلي لكيّ الورق لطابعات 80mm لمنع انقطاع الكلام 🌟 */
+                max-width: 72mm;
             }
             .screen-actions { display: none !important; }
             .no-print { display: none !important; }
+            * { color: #000 !important; }
         }
     </style>
 </head>
-<body onload="window.print();">
+<body>
 
     <div class="ticket">
         
         <div class="header text-center">
-            <h1>{{ \App\Models\Setting::first()->store_name }}</h1>
+            <h1>{{ \App\Models\Setting::first()->store_name ?? 'اسم المتجر' }}</h1>
             <p class="font-bold">أجود المنتجات الغذائية والاستهلاكية</p>
-            <p>{{ \App\Models\Setting::first()->address }}</p>
-            <p>هاتف: {{ \App\Models\Setting::first()->phone }}</p>
+            <p>{{ \App\Models\Setting::first()->address ?? 'العنوان' }}</p>
+            <p>هاتف: {{ \App\Models\Setting::first()->phone ?? 'رقم الهاتف' }}</p>
         </div>
 
         <div class="divider"></div>
@@ -251,7 +259,7 @@
 
         <div class="text-center" style="margin-top: 20px;">
             <p class="font-bold" style="margin: 0; font-size: 14px;">شكراً لزيارتكم!</p>
-            <p style="margin: 3px 0; font-size: 11px;">{{ \App\Models\Setting::first()->receipt_footer }}</p>
+            <p style="margin: 3px 0; font-size: 11px;">{{ \App\Models\Setting::first()->receipt_footer ?? '' }}</p>
             
             <div style="margin-top: 15px; font-family: 'Courier New', monospace; letter-spacing: 2px;">
                 |||| || ||| || ||| ||| || ||
@@ -274,5 +282,16 @@
         </a>
     </div>
 
+    <script>
+        window.onload = function() {
+            // أمر الطباعة
+            window.print();
+            
+            // بعد ثانية واحدة (1000 ملي ثانية)، يتم توجيه الكاشير للشاشة الرئيسية لخدمة الزبون التالي
+            setTimeout(function() {
+                window.location.href = "{{ route('pos') }}";
+            }, 1000);
+        }
+    </script>
 </body>
 </html>
