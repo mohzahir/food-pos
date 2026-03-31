@@ -196,13 +196,17 @@
 
             <div class="p-6 border-t border-slate-200 bg-white shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4">
                 
-                <div class="flex gap-3 w-full sm:w-auto">
+                <div class="flex flex-wrap gap-3 w-full sm:w-auto">
                     <button wire:click="closeModal" class="px-8 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl transition-colors w-full sm:w-auto">إغلاق النافذة</button>
                     
                     <a href="{{ route('print.purchase', $selectedPurchase->id) }}" target="_blank" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2 w-full sm:w-auto transform hover:-translate-y-1">
                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                        <span>طباعة الفاتورة (A4)</span>
+                        <span>طباعة الفاتورة</span>
                     </a>
+
+                    <button wire:click="deletePurchase({{ $selectedPurchase->id }})" wire:confirm="⚠️ تحذير خطير: هل أنت متأكد من إلغاء الفاتورة نهائياً؟ سيتم خصم هذه البضاعة من المخزن وعكس ديون المورد تلقائياً!" class="px-6 py-3 bg-rose-100 hover:bg-rose-600 text-rose-700 hover:text-white font-black rounded-xl transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
+                        <span>🗑️ إلغاء الفاتورة بالكامل</span>
+                    </button>
                 </div>
                 
                 <div class="bg-slate-900 px-6 py-3 rounded-xl shadow-inner border border-slate-800 flex items-center gap-3 w-full sm:w-auto justify-center">

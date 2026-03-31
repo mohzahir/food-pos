@@ -41,13 +41,8 @@ class PosScreen extends Component
             $this->calculateTotal();
         }
         
-        // 🌟 استرجاع الفواتير المعلقة من السيشن عند فتح الشاشة
         $this->heldInvoices = session()->get('held_invoices', []);
     }
-
-    // ==========================================
-    // 🌟 دوال تعليق واسترجاع الفواتير الجديدة 🌟
-    // ==========================================
 
     public function holdInvoice()
     {
@@ -56,21 +51,18 @@ class PosScreen extends Component
             return;
         }
 
-        // حفظ بيانات الفاتورة الحالية في مصفوفة
         $invoiceData = [
             'cart' => $this->cart,
             'customer_id' => $this->customer_id,
             'paid_cash' => $this->paid_cash,
             'paid_bankak' => $this->paid_bankak,
             'total' => $this->total,
-            'time' => now()->format('H:i:s'), // وقت التعليق للتمييز
+            'time' => now()->format('H:i:s'), 
         ];
 
-        // إضافتها لقائمة الفواتير المعلقة وحفظها في السيشن
         $this->heldInvoices[] = $invoiceData;
         session()->put('held_invoices', $this->heldInvoices);
 
-        // تصفير الشاشة للعميل الجديد
         $this->clearCart();
         $this->customer_id = '';
         $this->paid_cash = 0;
@@ -84,17 +76,14 @@ class PosScreen extends Component
         if (isset($this->heldInvoices[$index])) {
             $invoiceToRestore = $this->heldInvoices[$index];
 
-            // إزالة الفاتورة من قائمة المعلقات
             unset($this->heldInvoices[$index]);
             $this->heldInvoices = array_values($this->heldInvoices);
             session()->put('held_invoices', $this->heldInvoices);
 
-            // إذا كانت الشاشة الحالية فيها فاتورة لم تكتمل، نقوم بتعليقها أوتوماتيكياً حتى لا تضيع
             if (!empty($this->cart)) {
                 $this->holdInvoice();
             }
 
-            // استرجاع الفاتورة المطلوبة للشاشة
             $this->cart = $invoiceToRestore['cart'];
             $this->customer_id = $invoiceToRestore['customer_id'] ?? '';
             $this->paid_cash = $invoiceToRestore['paid_cash'] ?? 0;
@@ -120,8 +109,6 @@ class PosScreen extends Component
     {
         $this->isHeldInvoicesModalOpen = !$this->isHeldInvoicesModalOpen;
     }
-
-    // ==========================================
 
     public function openCustomerModal()
     {
@@ -319,7 +306,6 @@ class PosScreen extends Component
                 $conversionRate = $unit ? $unit->conversion_rate : 1;
                 $itemCostPrice = ($product ? $product->current_cost_price : 0) * $conversionRate;
 
-                // بمجرد تنفيذ هذا السطر سيقوم الـ Observer بخصم الكمية الصحيحة تلقائياً
                 SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $item['product_id'],
@@ -361,10 +347,31 @@ class PosScreen extends Component
             $productsQuery->where('category_id', $this->selected_category);
         }
 
+        // ==========================================
+        // 🌟 السحر هنا: البحث الذكي + معالجة الحروف العربية 🌟
+        // ==========================================
         if (!empty($this->search)) {
-            $productsQuery->where('name', 'like', '%' . $this->search . '%');
+            // تقسيم نص البحث إلى كلمات منفصلة
+            $searchTerms = explode(' ', trim($this->search));
+            
+            $productsQuery->where(function ($query) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $cleanTerm = trim($term);
+                    
+                    if ($cleanTerm !== '') {
+                        // 1. استبدال الحروف العربية المتشابهة بعلامة (_) والتي تعني "أي حرف" في الـ SQL
+                        $normalizedTerm = str_replace(['أ', 'إ', 'آ', 'ا'], '_', $cleanTerm); // الألفات
+                        $normalizedTerm = str_replace(['ة', 'ه'], '_', $normalizedTerm);      // التاء المربوطة والهاء
+                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm); // الياءات والألف المقصورة والهمزة
+                        
+                        // 2. البحث باستخدام الكلمة المعالجة
+                        $query->where('name', 'like', '%' . $normalizedTerm . '%');
+                    }
+                }
+            });
         }
-        
+        // ==========================================
+
         $products = $productsQuery->get();
         $quickItems = collect();
 
