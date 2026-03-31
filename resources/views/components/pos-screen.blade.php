@@ -1,17 +1,40 @@
 <div class="p-4 sm:p-6 bg-slate-50 min-h-screen">
     
 
-    <audio id="beepSound" src="https://actions.google.com/sounds/v1/ui/beep_short.ogg" preload="auto"></audio>
 
-    <div x-data="{ showAddedToast: false, productName: '' }" 
+    <div x-data="{ 
+            showAddedToast: false, 
+            productName: '',
+            
+            // دالة توليد صوت الباركود المدمجة
+            playBeep() {
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    
+                    oscillator.type = 'sine'; // نوع الموجة
+                    oscillator.frequency.value = 900; // تردد الصوت (يشبه جهاز الباركود)
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); // مستوى الصوت
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.1); // مدة الصوت (جزء من الثانية)
+                } catch(e) { 
+                    console.log('عذراً، المتصفح يمنع الصوت التلقائي', e); 
+                }
+            }
+         }" 
          @item-added.window="
             showAddedToast = true; 
             productName = $event.detail.productName;
             
-            /* تشغيل صوت الباركود */
-            let audio = document.getElementById('beepSound');
-            audio.currentTime = 0; /* لإعادة الصوت من البداية إذا ضغط بسرعة */
-            audio.play().catch(e => console.log('يجب التفاعل مع الشاشة أولاً لتشغيل الصوت'));
+            /* 🎵 تشغيل الصوت فوراً */
+            playBeep();
             
             /* إخفاء الإشعار بعد ثانية واحدة */
             setTimeout(() => showAddedToast = false, 1000);
@@ -26,7 +49,7 @@
             <span class="text-lg text-slate-300" x-text="productName"></span>
         </div>
     </div>
-    
+
     @if (session()->has('success'))
         <div class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-fade-in-down flex items-center gap-2">
             <span>✅</span> {{ session('success') }}
