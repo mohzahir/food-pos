@@ -3,123 +3,79 @@
 namespace App\Livewire;
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Product;
-use App\Models\Unit;
 use App\Models\ProductUnit;
 
 class PriceUpdater extends Component
 {
-    public $selected_product = '';
-    
-    // وحدة التسعير الأساسية (التي سيدخل التاجر بناءً عليها التكلفة وسعر القطاعي)
-    public $pricing_unit_id = '';
-    public $pricing_unit_name = '';
-    public $conversion_rate = 1;
-    
-    // حقول أسعار التكلفة والقطاعي
-    public $cost_price = '';
-    public $retail_price = ''; 
-    
-    // مصفوفة ديناميكية لتخزين أسعار كل وحدات الجملة [id => price]
-    public $wholesale_prices = [];
-    
-    // بيانات للعرض في الواجهة
-    public $available_units = [];
-    public $wholesale_records = [];
+    use WithPagination;
 
-    public function updatedSelectedProduct($productId)
+    public $search = '';
+
+    // تصفير الترقيم عند البحث
+    public function updatingSearch()
     {
-        // تصفير البيانات القديمة عند تغيير المنتج
-        $this->reset(['pricing_unit_id', 'cost_price', 'retail_price', 'wholesale_prices', 'available_units', 'wholesale_records', 'pricing_unit_name', 'conversion_rate']);
-        
-        if ($productId) {
-            $product = Product::with('baseUnit')->find($productId);
-            
-            // 1. جلب كل تسعيرات الجملة (الباركودات الفرعية) لهذا المنتج
-            $this->wholesale_records = ProductUnit::with('unit')->where('product_id', $productId)->get();
-            
-            $units = collect();
-            if ($product->baseUnit) {
-                $units->push($product->baseUnit);
-            }
-            
-            // 2. تعبئة مصفوفة أسعار الجملة للواجهة وإضافة الوحدات للقائمة
-            foreach ($this->wholesale_records as $record) {
-                $units->push($record->unit);
-                $this->wholesale_prices[$record->id] = $record->specific_selling_price;
-            }
-            
-            // تصفية الوحدات من التكرار وترتيبها من الأكبر للأصغر (لنجعل الوحدة الكبرى هي الافتراضية)
-            $this->available_units = $units->unique('id')->sortByDesc('conversion_rate')->values()->all();
-            
-            // 3. اختيار الوحدة الكبرى كخيار افتراضي لحساب التكلفة والقطاعي
-            if (count($this->available_units) > 0) {
-                $this->pricing_unit_id = $this->available_units[0]['id'];
-                $this->updatePricingBaseline();
-            }
+        $this->resetPage();
+    }
+
+    // 1. دالة حفظ التكلفة لحظياً
+    public function updateCostPrice($productId, $newPrice)
+    {
+        if (is_numeric($newPrice) && $newPrice >= 0) {
+            Product::where('id', $productId)->update(['current_cost_price' => $newPrice]);
+            $this->dispatch('price-saved'); // إرسال إشعار للواجهة بظهور علامة الصح
         }
     }
 
-    // عندما يغير التاجر وحدة قياس التكلفة (مثلاً من 50 كيلو إلى 5 كيلو)
-    public function updatedPricingUnitId()
+    // 2. دالة حفظ سعر القطاعي لحظياً
+    public function updateRetailPrice($productId, $newPrice)
     {
-        $this->updatePricingBaseline();
-    }
-
-    private function updatePricingBaseline()
-    {
-        if ($this->selected_product && $this->pricing_unit_id) {
-            $product = Product::find($this->selected_product);
-            $unit = Unit::find($this->pricing_unit_id);
-            
-            if ($product && $unit) {
-                $this->pricing_unit_name = $unit->name;
-                $this->conversion_rate = $unit->conversion_rate;
-                
-                // حساب وعرض التكلفة والسعر الحالي بناءً على الوحدة المختارة
-                $this->cost_price = $product->current_cost_price * $this->conversion_rate;
-                $this->retail_price = $product->current_selling_price * $this->conversion_rate;
-            }
+        if (is_numeric($newPrice) && $newPrice >= 0) {
+            Product::where('id', $productId)->update(['current_selling_price' => $newPrice]);
+            $this->dispatch('price-saved');
         }
     }
 
-    public function updatePrice()
+    // 3. دالة حفظ تسعيرات الجملة لحظياً
+    public function updateWholesalePrice($productUnitId, $newPrice)
     {
-        $this->validate([
-            'selected_product' => 'required',
-            'pricing_unit_id' => 'required',
-            'cost_price' => 'required|numeric|min:0',
-            'retail_price' => 'required|numeric|min:0',
-            // التحقق من أن كل أسعار الجملة المدخلة صحيحة (أرقام)
-            'wholesale_prices.*' => 'nullable|numeric|min:0',
-        ]);
-
-        $product = Product::find($this->selected_product);
-
-        // 1. تحديث التكلفة وسعر القطاعي (للوحدة الأساسية)
-        $baseCost = $this->cost_price / $this->conversion_rate;
-        $baseRetail = $this->retail_price / $this->conversion_rate;
-
-        $product->update([
-            'current_cost_price' => $baseCost,
-            'current_selling_price' => $baseRetail,
-        ]);
-
-        // 2. تحديث كل تسعيرات الجملة بضغطة واحدة!
-        foreach ($this->wholesale_prices as $recordId => $price) {
-            ProductUnit::where('id', $recordId)->update([
-                'specific_selling_price' => $price !== '' ? $price : null
-            ]);
+        if (is_numeric($newPrice) && $newPrice >= 0) {
+            ProductUnit::where('id', $productUnitId)->update(['specific_selling_price' => $newPrice]);
+            $this->dispatch('price-saved');
+        } elseif ($newPrice === '') {
+            // إذا ترك الحقل فارغاً، نحذف التسعيرة المخصصة
+            ProductUnit::where('id', $productUnitId)->update(['specific_selling_price' => null]);
+            $this->dispatch('price-saved');
         }
-
-        session()->flash('success', 'تم تحديث جميع أسعار المنتج (القطاعي وكل وحدات الجملة) بنجاح!');
-        $this->reset(['selected_product', 'pricing_unit_id', 'cost_price', 'retail_price', 'wholesale_prices', 'available_units', 'wholesale_records', 'pricing_unit_name', 'conversion_rate']);
     }
 
     public function render()
     {
+        // جلب المنتجات مع وحداتها (الأساسية والفرعية) مع البحث
+        $productsQuery = Product::with(['baseUnit', 'productUnits.unit'])
+            ->where('is_active', true);
+
+        if (!empty($this->search)) {
+            $searchTerms = explode(' ', trim($this->search));
+            $productsQuery->where(function ($query) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $cleanTerm = trim($term);
+                    if ($cleanTerm !== '') {
+                        $normalizedTerm = str_replace(['أ', 'إ', 'آ', 'ا'], '_', $cleanTerm); 
+                        $normalizedTerm = str_replace(['ة', 'ه'], '_', $normalizedTerm);      
+                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm); 
+                        $query->where('name', 'like', '%' . $normalizedTerm . '%');
+                    }
+                }
+            });
+        }
+
+        // عرض 20 منتج في كل صفحة لتخفيف الضغط وجعل الشاشة سريعة جداً
+        $products = $productsQuery->orderBy('name')->paginate(20);
+
         return view('components.price-updater', [
-            'products' => Product::where('is_active', true)->orderBy('name')->get(),
+            'products' => $products
         ]);
     }
 }
