@@ -70,6 +70,15 @@
                                 <input type="number" step="1" min="0" wire:change="updateSubtotal('{{ $key }}', $event.target.value)" value="{{ round($item['unit_price'] * $item['quantity'], 0) }}" class="w-full text-center font-black text-xs p-1.5 border-2 border-blue-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700" onclick="this.select()">
                             </div>
                         </div>
+
+                        @if($item['is_price_modified'] ?? false)
+                            <div class="mt-2 pt-2 border-t border-slate-200 animate-slide-in">
+                                <button wire:click="saveNewOfficialPrice('{{ $key }}')" class="w-full bg-emerald-100 hover:bg-emerald-500 text-emerald-700 hover:text-white text-[10px] font-black py-2 rounded-lg transition-colors flex items-center justify-center gap-1 border border-emerald-200 shadow-sm">
+                                    <span>🔄 اعتماد هذا السعر رسمياً في المخزن</span>
+                                </button>
+                            </div>
+                        @endif
+
                     </div>
                 @empty
                     <div class="flex flex-col items-center justify-center h-full text-slate-400 py-8">
@@ -308,18 +317,23 @@
 </div>
 
 <style>
-/* تجميل شريط التمرير (Scrollbar) بأسلوب Mac OS */
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* حركة الظهور الناعمة */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(20px) translateX(-50%); }
     to { opacity: 1; transform: translateY(0) translateX(-50%); }
 }
 .animate-fade-in-down {
     animation: fadeInUp 0.4s ease-out forwards;
+}
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in {
+    animation: slideIn 0.2s ease-out forwards;
 }
 </style>

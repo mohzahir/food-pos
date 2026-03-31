@@ -30,7 +30,6 @@ class PosScreen extends Component
     public $newCustomerName = '';
     public $newCustomerPhone = '';
 
-    // 🌟 متغيرات تعليق الفواتير الجديدة
     public $heldInvoices = []; 
     public $isHeldInvoicesModalOpen = false;
 
@@ -197,6 +196,9 @@ class PosScreen extends Component
                 'unit_id' => $unitId,
                 'unit_name' => $unit->name,
                 'unit_price' => $unitPrice,
+                // 🌟 حفظ السعر الأصلي للمقارنة لاحقاً
+                'original_price' => $unitPrice, 
+                'is_price_modified' => false, // علامة تدل هل تم تعديل السعر أم لا
                 'quantity' => $quantity, 
             ];
         }
@@ -217,9 +219,55 @@ class PosScreen extends Component
     {
         if (is_numeric($newPrice) && $newPrice >= 0) {
             $this->cart[$key]['unit_price'] = (float) $newPrice;
+            
+            // 🌟 اكتشاف التغيير: هل السعر المدخل يختلف عن السعر الأصلي المسجل بالداتابيز؟
+            $originalPrice = $this->cart[$key]['original_price'] ?? 0;
+            if ((float)$newPrice !== (float)$originalPrice) {
+                $this->cart[$key]['is_price_modified'] = true;
+            } else {
+                $this->cart[$key]['is_price_modified'] = false;
+            }
         }
         $this->calculateTotal();
     }
+
+    // ==========================================
+    // 🌟 دالة السحر: اعتماد السعر الجديد في النظام 🌟
+    // ==========================================
+    public function saveNewOfficialPrice($key)
+    {
+        if (!isset($this->cart[$key])) return;
+
+        $item = $this->cart[$key];
+        $productId = $item['product_id'];
+        $unitId = $item['unit_id'];
+        $newPrice = $item['unit_price'];
+
+        $product = Product::find($productId);
+        $unit = Unit::find($unitId);
+
+        if ($product && $unit) {
+            // تحديث السعر في قاعدة البيانات
+            if ($product->base_unit_id == $unitId) {
+                // إذا كانت الوحدة هي الأساسية (قطاعي)، نحدث السعر الأساسي
+                $basePrice = $newPrice / $unit->conversion_rate;
+                $product->update(['current_selling_price' => $basePrice]);
+            } else {
+                // إذا كانت الوحدة فرعية (جملة)، نحدث تسعيرة الجملة
+                ProductUnit::where('product_id', $productId)
+                    ->where('unit_id', $unitId)
+                    ->update(['specific_selling_price' => $newPrice]);
+            }
+
+            // تحديث بيانات السلة لكي يختفي الزر الأخضر
+            $this->cart[$key]['original_price'] = $newPrice;
+            $this->cart[$key]['is_price_modified'] = false;
+            session()->put('pos_cart', $this->cart);
+
+            session()->flash('success', '✅ تم اعتماد وتحديث السعر رسمياً في النظام!');
+        }
+    }
+    // ==========================================
 
     public function updateSubtotal($key, $newSubtotal)
     {
@@ -347,11 +395,7 @@ class PosScreen extends Component
             $productsQuery->where('category_id', $this->selected_category);
         }
 
-        // ==========================================
-        // 🌟 السحر هنا: البحث الذكي + معالجة الحروف العربية 🌟
-        // ==========================================
         if (!empty($this->search)) {
-            // تقسيم نص البحث إلى كلمات منفصلة
             $searchTerms = explode(' ', trim($this->search));
             
             $productsQuery->where(function ($query) use ($searchTerms) {
@@ -359,18 +403,15 @@ class PosScreen extends Component
                     $cleanTerm = trim($term);
                     
                     if ($cleanTerm !== '') {
-                        // 1. استبدال الحروف العربية المتشابهة بعلامة (_) والتي تعني "أي حرف" في الـ SQL
-                        $normalizedTerm = str_replace(['أ', 'إ', 'آ', 'ا'], '_', $cleanTerm); // الألفات
-                        $normalizedTerm = str_replace(['ة', 'ه'], '_', $normalizedTerm);      // التاء المربوطة والهاء
-                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm); // الياءات والألف المقصورة والهمزة
+                        $normalizedTerm = str_replace(['أ', 'إ', 'آ', 'ا'], '_', $cleanTerm);
+                        $normalizedTerm = str_replace(['ة', 'ه'], '_', $normalizedTerm);      
+                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm); 
                         
-                        // 2. البحث باستخدام الكلمة المعالجة
                         $query->where('name', 'like', '%' . $normalizedTerm . '%');
                     }
                 }
             });
         }
-        // ==========================================
 
         $products = $productsQuery->get();
         $quickItems = collect();
