@@ -1,5 +1,32 @@
 <div class="p-4 sm:p-6 bg-slate-50 min-h-screen">
     
+
+    <audio id="beepSound" src="https://actions.google.com/sounds/v1/ui/beep_short.ogg" preload="auto"></audio>
+
+    <div x-data="{ showAddedToast: false, productName: '' }" 
+         @item-added.window="
+            showAddedToast = true; 
+            productName = $event.detail.productName;
+            
+            /* تشغيل صوت الباركود */
+            let audio = document.getElementById('beepSound');
+            audio.currentTime = 0; /* لإعادة الصوت من البداية إذا ضغط بسرعة */
+            audio.play().catch(e => console.log('يجب التفاعل مع الشاشة أولاً لتشغيل الصوت'));
+            
+            /* إخفاء الإشعار بعد ثانية واحدة */
+            setTimeout(() => showAddedToast = false, 1000);
+         ">
+        
+        <div x-show="showAddedToast" 
+             x-transition.opacity.duration.200ms
+             style="display: none;"
+             class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[100] bg-slate-900/90 backdrop-blur-sm text-white px-8 py-6 rounded-3xl shadow-2xl font-black text-2xl flex flex-col items-center gap-3 pointer-events-none">
+            <span class="text-5xl">🛒</span>
+            <span class="text-emerald-400">تمت الإضافة!</span>
+            <span class="text-lg text-slate-300" x-text="productName"></span>
+        </div>
+    </div>
+    
     @if (session()->has('success'))
         <div class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-fade-in-down flex items-center gap-2">
             <span>✅</span> {{ session('success') }}

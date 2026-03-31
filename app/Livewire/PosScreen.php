@@ -188,21 +188,33 @@ class PosScreen extends Component
 
         if (isset($this->cart[$cartKey])) {
             $this->cart[$cartKey]['quantity']++;
+            
+            // 🌟 السحر هنا: فصل المنتج من مكانه الحالي وإعادته في قمة المصفوفة
+            $item = $this->cart[$cartKey];
+            unset($this->cart[$cartKey]);
+            $this->cart = [$cartKey => $item] + $this->cart;
+            
         } else {
             $unitPrice = $product->getPriceForUnit($unitId); 
-            $this->cart[$cartKey] = [
+            $newItem = [
                 'product_id' => $product->id,
                 'name' => $product->name,
                 'unit_id' => $unitId,
                 'unit_name' => $unit->name,
                 'unit_price' => $unitPrice,
-                // 🌟 حفظ السعر الأصلي للمقارنة لاحقاً
                 'original_price' => $unitPrice, 
-                'is_price_modified' => false, // علامة تدل هل تم تعديل السعر أم لا
+                'is_price_modified' => false,
                 'quantity' => $quantity, 
             ];
+            
+            // 🌟 إدراج المنتج الجديد في بداية المصفوفة (أعلى الفاتورة)
+            $this->cart = [$cartKey => $newItem] + $this->cart;
         }
+        
         $this->calculateTotal();
+
+        // 🌟 إرسال حدث (Event) للواجهة الأمامية لتشغيل الصوت وإظهار الإشعار
+        $this->dispatch('item-added', productName: $product->name);
     }
 
     public function updateQuantity($key, $quantity)
