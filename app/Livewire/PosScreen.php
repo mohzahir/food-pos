@@ -26,19 +26,102 @@ class PosScreen extends Component
     public $transaction_number = '';
     public $selected_category = null;
 
-    // --- متغيرات إضافة عميل سريع ---
     public $isCustomerModalOpen = false;
     public $newCustomerName = '';
     public $newCustomerPhone = '';
 
+    // 🌟 متغيرات تعليق الفواتير الجديدة
+    public $heldInvoices = []; 
+    public $isHeldInvoicesModalOpen = false;
+
     public function mount()
     {
-        // استرجاع السلة من الـ Session إذا كانت موجودة
         if (session()->has('pos_cart')) {
             $this->cart = session('pos_cart');
             $this->calculateTotal();
         }
+        
+        // 🌟 استرجاع الفواتير المعلقة من السيشن عند فتح الشاشة
+        $this->heldInvoices = session()->get('held_invoices', []);
     }
+
+    // ==========================================
+    // 🌟 دوال تعليق واسترجاع الفواتير الجديدة 🌟
+    // ==========================================
+
+    public function holdInvoice()
+    {
+        if (empty($this->cart)) {
+            session()->flash('error', 'السلة فارغة، لا يوجد شيء لتعليقه!');
+            return;
+        }
+
+        // حفظ بيانات الفاتورة الحالية في مصفوفة
+        $invoiceData = [
+            'cart' => $this->cart,
+            'customer_id' => $this->customer_id,
+            'paid_cash' => $this->paid_cash,
+            'paid_bankak' => $this->paid_bankak,
+            'total' => $this->total,
+            'time' => now()->format('H:i:s'), // وقت التعليق للتمييز
+        ];
+
+        // إضافتها لقائمة الفواتير المعلقة وحفظها في السيشن
+        $this->heldInvoices[] = $invoiceData;
+        session()->put('held_invoices', $this->heldInvoices);
+
+        // تصفير الشاشة للعميل الجديد
+        $this->clearCart();
+        $this->customer_id = '';
+        $this->paid_cash = 0;
+        $this->paid_bankak = 0;
+
+        session()->flash('success', 'تم تعليق الفاتورة بنجاح. يمكنك خدمة العميل التالي!');
+    }
+
+    public function restoreInvoice($index)
+    {
+        if (isset($this->heldInvoices[$index])) {
+            $invoiceToRestore = $this->heldInvoices[$index];
+
+            // إزالة الفاتورة من قائمة المعلقات
+            unset($this->heldInvoices[$index]);
+            $this->heldInvoices = array_values($this->heldInvoices);
+            session()->put('held_invoices', $this->heldInvoices);
+
+            // إذا كانت الشاشة الحالية فيها فاتورة لم تكتمل، نقوم بتعليقها أوتوماتيكياً حتى لا تضيع
+            if (!empty($this->cart)) {
+                $this->holdInvoice();
+            }
+
+            // استرجاع الفاتورة المطلوبة للشاشة
+            $this->cart = $invoiceToRestore['cart'];
+            $this->customer_id = $invoiceToRestore['customer_id'] ?? '';
+            $this->paid_cash = $invoiceToRestore['paid_cash'] ?? 0;
+            $this->paid_bankak = $invoiceToRestore['paid_bankak'] ?? 0;
+            
+            $this->calculateTotal();
+            $this->isHeldInvoicesModalOpen = false;
+            
+            session()->flash('success', 'تم استرجاع الفاتورة المعلقة بنجاح!');
+        }
+    }
+
+    public function deleteHeldInvoice($index)
+    {
+        if (isset($this->heldInvoices[$index])) {
+            unset($this->heldInvoices[$index]);
+            $this->heldInvoices = array_values($this->heldInvoices);
+            session()->put('held_invoices', $this->heldInvoices);
+        }
+    }
+
+    public function toggleHeldInvoicesModal()
+    {
+        $this->isHeldInvoicesModalOpen = !$this->isHeldInvoicesModalOpen;
+    }
+
+    // ==========================================
 
     public function openCustomerModal()
     {

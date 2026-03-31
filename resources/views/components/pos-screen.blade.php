@@ -15,13 +15,30 @@
         
         <div class="col-span-1 lg:col-span-4 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-4 flex flex-col h-[85vh] lg:h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar">
             
-            <div class="flex justify-between items-center mb-3 pb-3 border-b border-slate-100 shrink-0">
-                <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <span class="text-blue-600">🧾</span> الفاتورة الحالية
-                </h2>
-                <span class="bg-blue-50 text-blue-600 text-xs font-bold px-3 py-1 rounded-full border border-blue-100 shadow-sm">
-                    {{ count($cart) }} أصناف
-                </span>
+            <div class="flex flex-col gap-3 mb-3 pb-3 border-b border-slate-100 shrink-0">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
+                        <span class="text-blue-600">🧾</span> الفاتورة الحالية
+                    </h2>
+                    <span class="bg-blue-50 text-blue-600 text-xs font-bold px-3 py-1 rounded-full border border-blue-100 shadow-sm">
+                        {{ count($cart) }} أصناف
+                    </span>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button wire:click="holdInvoice" class="flex-1 bg-amber-100 text-amber-700 hover:bg-amber-500 hover:text-white border border-amber-200 py-2 rounded-xl font-black text-sm transition-colors flex items-center justify-center gap-1 shadow-sm" title="تعليق الشاشة للعميل التالي" @if(empty($cart)) disabled @endif>
+                        <span>⏸️ تعليق الفاتورة</span>
+                    </button>
+                    
+                    <button wire:click="toggleHeldInvoicesModal" class="relative bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white border border-slate-200 py-2 px-4 rounded-xl font-black text-sm transition-colors flex items-center justify-center gap-1 shadow-sm">
+                        <span>📋 المعلقة</span>
+                        @if(count($heldInvoices) > 0)
+                            <span class="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white animate-pulse">
+                                {{ count($heldInvoices) }}
+                            </span>
+                        @endif
+                    </button>
+                </div>
             </div>
             
             <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 mb-3 min-h-[250px]">
@@ -233,6 +250,56 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    @if($isHeldInvoicesModalOpen)
+    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-opacity">
+        <div class="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] w-full max-w-lg overflow-hidden transform transition-all animate-fade-in-up border border-slate-200 flex flex-col max-h-[80vh]">
+            
+            <div class="bg-slate-900 p-5 flex justify-between items-center text-white border-b border-slate-800 shrink-0">
+                <h3 class="text-lg font-black flex items-center gap-2">
+                    <span class="text-amber-400">📋</span> الفواتير المعلقة ({{ count($heldInvoices) }})
+                </h3>
+                <button wire:click="toggleHeldInvoicesModal" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-full flex items-center justify-center transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <div class="p-4 bg-slate-50 overflow-y-auto custom-scrollbar flex-1">
+                @forelse($heldInvoices as $index => $invoice)
+                    <div class="bg-white border border-slate-200 rounded-2xl p-4 mb-3 shadow-sm flex items-center justify-between hover:border-amber-300 transition-colors">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                    ⏱️ {{ $invoice['time'] }}
+                                </span>
+                                <span class="text-xs font-bold text-slate-500">
+                                    {{ count($invoice['cart']) }} أصناف
+                                </span>
+                            </div>
+                            <div class="text-lg font-black text-slate-800" dir="ltr">
+                                {{ number_format($invoice['total'], 0) }} SDG
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button wire:click="restoreInvoice({{ $index }})" class="bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white px-4 py-2 rounded-xl font-black text-xs transition-colors shadow-sm">
+                                🔄 استرجاع
+                            </button>
+                            <button wire:click="deleteHeldInvoice({{ $index }})" class="bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white px-3 py-2 rounded-xl font-black transition-colors" title="حذف نهائي">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                @empty
+                    <div class="text-center py-10">
+                        <span class="text-4xl grayscale opacity-40">📭</span>
+                        <p class="mt-3 font-bold text-slate-500">لا توجد فواتير معلقة حالياً.</p>
+                    </div>
+                @endforelse
             </div>
         </div>
     </div>
