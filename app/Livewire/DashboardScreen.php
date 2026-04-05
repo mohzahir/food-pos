@@ -19,12 +19,12 @@ class DashboardScreen extends Component
     {
         $today = Carbon::today();
 
-        // 1. حركة المبيعات والمصروفات
+        // 1. حركة المبيعات والمصروفات والمشتريات (الإجماليات العامة)
         $todaySales = Sale::whereDate('created_at', $today)->sum('total_amount');
         $todayExpenses = Expense::whereDate('expense_date', $today)->sum('amount');
         $todayPurchases = Purchase::whereDate('purchase_date', $today)->sum('total_amount');
 
-        // 2. حساب تكلفة البضاعة المباعة اليوم
+        // 2. حساب تكلفة البضاعة المباعة اليوم (لحساب الربح)
         $todaySaleItems = SaleItem::with(['product', 'unit'])->whereHas('sale', function($q) use ($today) {
             $q->whereDate('created_at', $today);
         })->get();
@@ -41,24 +41,36 @@ class DashboardScreen extends Component
         $netProfit = $todaySales - $costOfGoodsSold - $todayExpenses;
 
         // -------------------------------------------------------------
-        // 4. السحر المحاسبي: فصل النقدية (الدرج) عن حساب (بنكك)
+        // 4. السحر المحاسبي (المحدث): فصل النقدية عن بنكك بدقة متناهية
         // -------------------------------------------------------------
         
-        // أ) المبيعات مفصلة حسب طريقة الدفع
-        $cashSales = Sale::whereDate('created_at', $today)->where('payment_method', 'cash')->sum('paid_amount');
-        $bankakSales = Sale::whereDate('created_at', $today)->where('payment_method', 'bankak')->sum('paid_amount');
+        // أ) مقبوضات المبيعات: نجمع حقول الدفع المباشرة (هذا يحل مشكلة الدفع المختلط Split فوراً)
+        $todayCashSales = Sale::whereDate('created_at', $today)->sum('paid_cash');
+        $todayBankakSales = Sale::whereDate('created_at', $today)->sum('paid_bankak');
 
-        // ب) الدفعات المستلمة من الديون (نفترض حالياً أنها تدفع كاش، ويمكنك تطويرها لاحقاً لتقبل بنكك)
+        // ب) مدفوعات المصروفات: فصل منصرفات الكاش عن بنكك
+        $todayCashExpenses = Expense::whereDate('expense_date', $today)->sum('paid_cash');
+        $todayBankakExpenses = Expense::whereDate('expense_date', $today)->sum('paid_bankak');
+
+        // ج) مدفوعات المشتريات (للموردين): فصل ما دفعناه للموردين اليوم
+        $todayCashPurchases = Purchase::whereDate('purchase_date', $today)->sum('paid_cash');
+        $todayBankakPurchases = Purchase::whereDate('purchase_date', $today)->sum('paid_bankak');
+
+        // د) الدفعات المستلمة من سداد الديون (نفترض حالياً أنها كاش)
         $todayPayments = Payment::whereDate('created_at', $today)->sum('amount');
 
-        // ج) الحسبة النهائية للمقبوضات
-        $totalBankakReceived = $bankakSales; 
+        // هـ) الحسبة النهائية الدقيقة:
         
-        // د) الكاش الفعلي في الخزنة = (مبيعات الكاش + سداد الديون) - (المصروفات اليومية المسحوبة من الدرج)
-        $actualCashInDrawer = ($cashSales + $todayPayments) - $todayExpenses;
+        // الكاش الفعلي في الدرج = (مبيعات كاش + سداد ديون) - (مصروفات كاش + سداد موردين كاش)
+        $actualCashInDrawer = ($todayCashSales + $todayPayments) - ($todayCashExpenses + $todayCashPurchases);
         
-        // الإجمالي العام (اختياري للعرض)
-        $totalReceivedToday = $actualCashInDrawer + $totalBankakReceived + $todayExpenses; 
+        // صافي رصيد بنكك اليوم = مبيعات بنكك - (مصروفات بنكك + سداد موردين بنكك)
+        $totalBankakReceived = $todayBankakSales - ($todayBankakExpenses + $todayBankakPurchases); 
+        
+        // الإجمالي العام المتوفر (كاش + بنكك)
+        $totalReceivedToday = $actualCashInDrawer + $totalBankakReceived; 
+
+        // -------------------------------------------------------------
 
         // 5. إجمالي الديون بالسوق
         $totalDebts = Customer::sum('balance');
@@ -78,7 +90,7 @@ class DashboardScreen extends Component
             'todayPurchases' => $todayPurchases,
             'netProfit' => $netProfit,
             
-            // المتغيرات الجديدة التي سنرسلها للواجهة
+            // المتغيرات المحدثة للواجهة
             'actualCashInDrawer' => $actualCashInDrawer,
             'totalBankakReceived' => $totalBankakReceived,
             'totalReceivedToday' => $totalReceivedToday,

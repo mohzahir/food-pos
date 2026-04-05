@@ -16,6 +16,7 @@ use App\Livewire\ProductManager;
 use App\Livewire\ExpiryRadar;
 use App\Livewire\ExpenseManager;
 use App\Livewire\PurchaseHistory;
+use App\Livewire\SaleHistory;
 
 // === مسار تسجيل الدخول (غير محمي لكي يراه الجميع) === //
 // يجب تسميته 'login' لأن Laravel يبحث عن هذا الاسم تلقائياً عند طرد المستخدم غير المسجل
@@ -48,9 +49,9 @@ Route::middleware([\App\Http\Middleware\CheckLicense::class])->group(function ()
     Route::middleware(['auth'])->group(function () {
         Route::get('/pos', PosScreen::class)->name('pos');
         // Route::get('/shift-closing', \App\Livewire\ShiftClosing::class)->name('shift.close');
-        
+       
         Route::get('/receipt/{sale}', function (Sale $sale) {
-            $sale->load('items.product', 'items.unit', 'customer'); 
+            $sale->load('items.product', 'items.unit', 'customer');
             return view('receipt', compact('sale'));
         })->name('receipt.show');
     });
@@ -80,7 +81,7 @@ Route::middleware([\App\Http\Middleware\CheckLicense::class])->group(function ()
             // جلب كل فواتير العميل (الخالصة والآجلة) لتظهر في كشف الحساب
             $sales = \App\Models\Sale::where('customer_id', $id)->latest()->get();
             // جلب إعدادات المتجر (اسم المحل وغيره) التي برمجناها سابقاً
-            $settings = \App\Models\Setting::first(); 
+            $settings = \App\Models\Setting::first();
 
             return view('print.ledger', compact('customer', 'payments', 'sales', 'settings'));
         })->name('print.ledger')->middleware('auth');
@@ -88,10 +89,11 @@ Route::middleware([\App\Http\Middleware\CheckLicense::class])->group(function ()
             // جلب الفاتورة مع تفاصيل الأصناف والمنتجات المرتبطة بها
             $purchase = \App\Models\Purchase::with(['items.product', 'items.unit'])->findOrFail($id);
             // جلب إعدادات المتجر
-            $settings = \App\Models\Setting::first(); 
+            $settings = \App\Models\Setting::first();
 
             return view('print.purchase', compact('purchase', 'settings'));
         })->name('print.purchase')->middleware('auth');
+        Route::get('/sales/history', SaleHistory::class)->name('sales.history');
     });
 
 

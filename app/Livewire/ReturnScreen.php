@@ -35,7 +35,7 @@ class ReturnScreen extends Component
         } else {
             // تصفير كميات الإرجاع عند فتح الفاتورة
             foreach ($this->sale->items as $item) {
-                $this->return_quantities[$item->id] = 0;
+                $this->return_quantities[$item->id] = '';
             }
         }
     }
@@ -61,58 +61,83 @@ class ReturnScreen extends Component
             $refundAmount = $qtyToReturn * $item->unit_price;
             $sale = $item->sale;
 
-            // 1. إعادة الكمية إلى المخزون (الكمية × معامل تحويل الوحدة)
-            $stockToAdd = $qtyToReturn * $item->unit->conversion_rate;
+            // 1. إعادة الكمية إلى المخزون بأمان (الكمية × معامل التحويل)
+            $conversionRate = $item->unit ? $item->unit->conversion_rate : 1;
+            $stockToAdd = $qtyToReturn * $conversionRate;
             $item->product->increment('current_stock', $stockToAdd);
 
             // 2. تحديث بيانات الصنف داخل الفاتورة
-            $item->quantity -= $qtyToReturn;
-            $item->subtotal -= $refundAmount;
-            $item->save();
-
-            // 3. المعالجة المالية (تحديث الفاتورة والديون)
-            $sale->total_amount -= $refundAmount;
-
-            if ($sale->customer_id && $sale->remaining_amount > 0) {
-                // إذا كان للعميل دين في هذه الفاتورة، نخصم المرتجع من الدين أولاً
-                $customer = Customer::find($sale->customer_id);
-                
-                if ($refundAmount <= $sale->remaining_amount) {
-                    $sale->remaining_amount -= $refundAmount;
-                    $customer->decrement('balance', $refundAmount);
+            // 🌟 نستخدم withoutEvents لإيقاف الـ Observer مؤقتاً حتى لا يضيف البضاعة للمخزن مرتين عند حذف الصنف!
+            SaleItem::withoutEvents(function () use ($item, $qtyToReturn, $refundAmount) {
+                if ($qtyToReturn == $item->quantity) {
+                    $item->delete(); // إرجاع كامل الصنف
                 } else {
-                    // إذا كان المرتجع أكبر من الدين المتبقي (أرجع بضاعة أكثر مما عليه)
-                    $cashToRefund = $refundAmount - $sale->remaining_amount;
-                    $customer->decrement('balance', $sale->remaining_amount); // تصفير الدين
-                    $sale->remaining_amount = 0;
-                    $sale->paid_amount -= $cashToRefund; // إرجاع الباقي كاش
+                    $item->quantity -= $qtyToReturn;
+                    $item->subtotal -= $refundAmount;
+                    $item->save(); // إرجاع جزئي
                 }
-            } else {
-                // فاتورة نقدية أو مسددة بالكامل: يتم إرجاع المبلغ كاش
-                $sale->paid_amount -= $refundAmount;
+            });
+
+            // 3. المعالجة المالية (تطبيق خوارزمية الشلال المحاسبي)
+            $sale->total_amount -= $refundAmount;
+            $amountToRefund = $refundAmount;
+
+            // أ) الأولوية الأولى: تسديد الديون (نسامح العميل في دينه أولاً)
+            if ($amountToRefund > 0 && $sale->remaining_amount > 0) {
+                $debtReduction = min($amountToRefund, $sale->remaining_amount);
+                $sale->remaining_amount -= $debtReduction;
+                $amountToRefund -= $debtReduction;
+
+                if ($sale->customer_id) {
+                    $customer = Customer::find($sale->customer_id);
+                    if ($customer) {
+                        $customer->decrement('balance', $debtReduction); // تنقيص دين العميل في دفتره
+                    }
+                }
             }
+
+            // ب) الأولوية الثانية: إرجاع الأموال من الكاش (إذا كان قد دفع كاش)
+            if ($amountToRefund > 0 && $sale->paid_cash > 0) {
+                $cashRefund = min($amountToRefund, $sale->paid_cash);
+                $sale->paid_cash -= $cashRefund;
+                $amountToRefund -= $cashRefund;
+            }
+
+            // ج) الأولوية الثالثة: إرجاع الأموال من بنكك (إذا كان قد دفع عبر التطبيق)
+            if ($amountToRefund > 0 && $sale->paid_bankak > 0) {
+                $bankakRefund = min($amountToRefund, $sale->paid_bankak);
+                $sale->paid_bankak -= $bankakRefund;
+                $amountToRefund -= $bankakRefund;
+            }
+
+            // تحديث الإجمالي المدفوع الجديد (مجموع الكاش وبنكك المتبقي)
+            $sale->paid_amount = $sale->paid_cash + $sale->paid_bankak;
 
             // تحديث حالة الفاتورة
             if ($sale->total_amount == 0) {
-                $sale->payment_status = 'paid'; // فاتورة ملغية فعلياً
-            } elseif ($sale->remaining_amount <= 0) {
+                $sale->payment_status = 'refunded'; // تم إرجاعها بالكامل
+            } elseif ($sale->remaining_amount == 0) {
                 $sale->payment_status = 'paid';
-            } elseif ($sale->remaining_amount == $sale->total_amount) {
-                $sale->payment_status = 'unpaid';
             } else {
                 $sale->payment_status = 'partial';
             }
 
             $sale->save();
-
-            // إذا أرجع الكاشير كل الكمية، نحذف الصنف من الفاتورة نهائياً
-            if ($item->quantity == 0) {
-                $item->delete();
-            }
         });
 
-        session()->flash('success', 'تم إرجاع الصنف، وإعادته للمخزن، وتحديث الحسابات بنجاح!');
-        $this->searchInvoice(); // تحديث عرض الفاتورة بعد الإرجاع
+        session()->flash('success', 'تم إرجاع الصنف بنجاح، وتحديث المخزون وتسوية حسابات (الكاش/بنكك)!');
+        
+        // تحديث عرض الفاتورة بعد الإرجاع ليرى الكاشير الأرقام الجديدة
+        $this->sale = Sale::with('items.product', 'items.unit', 'customer')
+                          ->where('receipt_number', $this->receipt_number)
+                          ->first();
+                          
+        // تصفير المربعات استعداداً لأي إرجاع آخر
+        if ($this->sale) {
+            foreach ($this->sale->items as $i) {
+                $this->return_quantities[$i->id] = '';
+            }
+        }
     }
 
     public function render()

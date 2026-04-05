@@ -14,15 +14,15 @@ use Illuminate\Support\Facades\DB;
 
 class PosScreen extends Component
 {
-    public $cart = []; 
-    public $barcode = ''; 
-    public $search = ''; 
-    public $total = 0; 
-    
-    public $customer_id = ''; 
-    public $payment_method = 'cash'; 
-    public $paid_cash = 0; 
-    public $paid_bankak = 0; 
+    public $cart = [];
+    public $barcode = '';
+    public $search = '';
+    public $total = 0;
+   
+    public $customer_id = '';
+    public $payment_method = 'cash';
+    public $paid_cash = 0;
+    public $paid_bankak = 0;
     public $transaction_number = '';
     public $selected_category = null;
 
@@ -30,11 +30,27 @@ class PosScreen extends Component
     public $newCustomerName = '';
     public $newCustomerPhone = '';
 
-    public $heldInvoices = []; 
+    public $heldInvoices = [];
     public $isHeldInvoicesModalOpen = false;
+
+    public $editing_sale_id = null; // 🌟 متغير جديد لمعرفة هل نحن في وضع التعديل
+
+    public $is_manual_payment = false; // 🌟 متغير جديد لمعرفة هل الكاشير كتب المبلغ بيده أم لا
 
     public function mount()
     {
+        if (session()->has('pos_edit_data')) {
+            $editData = session('pos_edit_data');
+            $this->editing_sale_id = $editData['sale_id'] ?? null;
+            $this->customer_id = $editData['customer_id'] ?? '';
+            $this->paid_cash = $editData['paid_cash'] ?? 0;
+            $this->paid_bankak = $editData['paid_bankak'] ?? 0;
+            $this->transaction_number = $editData['transaction_number'] ?? '';
+            
+            $this->is_manual_payment = true;
+            // ⚠️ أزلنا كود (نسيان السيشن) من هنا لكي لا يضيع عند الـ Refresh!
+        }
+
         if (session()->has('pos_cart')) {
             $this->cart = session('pos_cart');
             $this->calculateTotal();
@@ -42,6 +58,26 @@ class PosScreen extends Component
         
         $this->heldInvoices = session()->get('held_invoices', []);
     }
+
+    // 🌟 دوال لحفظ أي تعديل يجريه الكاشير على المبالغ حتى لا تضيع مع الـ Refresh
+    public function updatedPaidCash() { $this->is_manual_payment = true; $this->updateSessionEditData(); }
+    public function updatedPaidBankak() { $this->is_manual_payment = true; $this->updateSessionEditData(); }
+    public function updatedCustomerId() { $this->updateSessionEditData(); }
+    public function updatedTransactionNumber() { $this->updateSessionEditData(); }
+
+
+    private function updateSessionEditData() {
+        if ($this->editing_sale_id) {
+            session()->put('pos_edit_data', [
+                'sale_id' => $this->editing_sale_id,
+                'customer_id' => $this->customer_id,
+                'paid_cash' => $this->paid_cash,
+                'paid_bankak' => $this->paid_bankak,
+                'transaction_number' => $this->transaction_number,
+            ]);
+        }
+    }
+
 
     public function holdInvoice()
     {
@@ -56,7 +92,7 @@ class PosScreen extends Component
             'paid_cash' => $this->paid_cash,
             'paid_bankak' => $this->paid_bankak,
             'total' => $this->total,
-            'time' => now()->format('H:i:s'), 
+            'time' => now()->format('H:i:s'),
         ];
 
         $this->heldInvoices[] = $invoiceData;
@@ -87,10 +123,10 @@ class PosScreen extends Component
             $this->customer_id = $invoiceToRestore['customer_id'] ?? '';
             $this->paid_cash = $invoiceToRestore['paid_cash'] ?? 0;
             $this->paid_bankak = $invoiceToRestore['paid_bankak'] ?? 0;
-            
+           
             $this->calculateTotal();
             $this->isHeldInvoicesModalOpen = false;
-            
+           
             session()->flash('success', 'تم استرجاع الفاتورة المعلقة بنجاح!');
         }
     }
@@ -151,9 +187,9 @@ class PosScreen extends Component
         $barcodeStr = trim($this->barcode);
 
         if (strlen($barcodeStr) === 13 && str_starts_with($barcodeStr, '20')) {
-            $skuFromScale = (int) substr($barcodeStr, 2, 5); 
+            $skuFromScale = (int) substr($barcodeStr, 2, 5);
             $weightInGrams = (float) substr($barcodeStr, 7, 5);
-            $weightInKg = $weightInGrams / 1000; 
+            $weightInKg = $weightInGrams / 1000;
             $product = Product::where('sku', (string) $skuFromScale)->first();
 
             if ($product) {
@@ -162,7 +198,7 @@ class PosScreen extends Component
                 session()->flash('error', 'صنف الميزان غير معرف (SKU: ' . $skuFromScale . ')');
             }
             $this->barcode = '';
-            return; 
+            return;
         }
 
         $productUnit = ProductUnit::where('barcode', $barcodeStr)->first();
@@ -177,40 +213,40 @@ class PosScreen extends Component
                 session()->flash('error', 'المنتج غير موجود!');
             }
         }
-        $this->barcode = ''; 
+        $this->barcode = '';
     }
 
     public function addToCart($productId, $unitId, $quantity = 1)
     {
         $product = Product::findOrFail($productId);
         $unit = Unit::find($unitId);
-        $cartKey = $productId . '_' . $unitId; 
+        $cartKey = $productId . '_' . $unitId;
 
         if (isset($this->cart[$cartKey])) {
             $this->cart[$cartKey]['quantity']++;
-            
+           
             // 🌟 السحر هنا: فصل المنتج من مكانه الحالي وإعادته في قمة المصفوفة
             $item = $this->cart[$cartKey];
             unset($this->cart[$cartKey]);
             $this->cart = [$cartKey => $item] + $this->cart;
-            
+           
         } else {
-            $unitPrice = $product->getPriceForUnit($unitId); 
+            $unitPrice = $product->getPriceForUnit($unitId);
             $newItem = [
                 'product_id' => $product->id,
                 'name' => $product->name,
                 'unit_id' => $unitId,
                 'unit_name' => $unit->name,
                 'unit_price' => $unitPrice,
-                'original_price' => $unitPrice, 
+                'original_price' => $unitPrice,
                 'is_price_modified' => false,
-                'quantity' => $quantity, 
+                'quantity' => $quantity,
             ];
-            
+           
             // 🌟 إدراج المنتج الجديد في بداية المصفوفة (أعلى الفاتورة)
             $this->cart = [$cartKey => $newItem] + $this->cart;
         }
-        
+       
         $this->calculateTotal();
 
         // 🌟 إرسال حدث (Event) للواجهة الأمامية لتشغيل الصوت وإظهار الإشعار
@@ -231,7 +267,7 @@ class PosScreen extends Component
     {
         if (is_numeric($newPrice) && $newPrice >= 0) {
             $this->cart[$key]['unit_price'] = (float) $newPrice;
-            
+           
             // 🌟 اكتشاف التغيير: هل السعر المدخل يختلف عن السعر الأصلي المسجل بالداتابيز؟
             $originalPrice = $this->cart[$key]['original_price'] ?? 0;
             if ((float)$newPrice !== (float)$originalPrice) {
@@ -299,8 +335,11 @@ class PosScreen extends Component
             return round($item['unit_price'] * $item['quantity'], 0);
         }, $this->cart));
 
-        $this->paid_cash = (int) $this->total; 
-        $this->paid_bankak = 0;
+        // 🌟 السحر هنا: إذا لم يتدخل الكاشير يدوياً ولم تكن فاتورة مسترجعة، اجعل الكاش = الإجمالي
+        if (!$this->is_manual_payment) {
+            $this->paid_cash = (int) $this->total;
+            $this->paid_bankak = 0;
+        }
 
         session()->put('pos_cart', $this->cart);
     }
@@ -310,12 +349,20 @@ class PosScreen extends Component
         unset($this->cart[$key]);
         $this->calculateTotal();
     }
-    
+   
     public function clearCart()
     {
         $this->cart = [];
+        $this->editing_sale_id = null; // تصفير وضع التعديل
+        $this->is_manual_payment = false;
+        $this->customer_id = '';
+        $this->paid_cash = 0;
+        $this->paid_bankak = 0;
+        $this->transaction_number = '';
         $this->calculateTotal();
+        
         session()->forget('pos_cart'); 
+        session()->forget('pos_edit_data'); // تنظيف السيشن
     }
 
     public function checkout()
@@ -326,7 +373,7 @@ class PosScreen extends Component
         $remaining_amount = $this->total - $total_paid;
 
         if ($remaining_amount > 0 && empty($this->customer_id)) {
-            session()->flash('error', 'لا يمكن تسجيل فاتورة آجلة (بها متبقي) بدون اختيار العميل!');
+            session()->flash('error', 'لا يمكن تسجيل فاتورة آجلة بدون اختيار العميل!');
             return;
         }
 
@@ -342,6 +389,27 @@ class PosScreen extends Component
 
         DB::transaction(function () use (&$saleId, $remaining_amount, $payment_status, $total_paid, $method) {
             
+            // 🚨 الخطوة 1: إذا كنا نعدل فاتورة قديمة، نقوم بإلغائها وعكسها (بشكل آمن)
+            if ($this->editing_sale_id) {
+                $oldSale = Sale::with('items')->find($this->editing_sale_id);
+                if ($oldSale) {
+                    // عكس ديون العميل
+                    if ($oldSale->customer_id && $oldSale->remaining_amount > 0) {
+                        $oldCustomer = Customer::find($oldSale->customer_id);
+                        if ($oldCustomer) {
+                            $oldCustomer->decrement('balance', $oldSale->remaining_amount);
+                        }
+                    }
+                    // إرجاع البضاعة للمخزن
+                    foreach ($oldSale->items as $item) {
+                        $item->delete(); 
+                    }
+                    // مسح الفاتورة القديمة
+                    $oldSale->delete();
+                }
+            }
+
+            // 🚨 الخطوة 2: إنشاء الفاتورة الجديدة وحفظها
             $sale = Sale::create([
                 'user_id' => auth()->id(), 
                 'receipt_number' => 'INV-' . time(),
@@ -377,6 +445,7 @@ class PosScreen extends Component
                 ]);
             }
 
+            // إضافة الدين للعميل الجديد
             if ($remaining_amount > 0 && !empty($this->customer_id)) {
                 $customer = Customer::find($this->customer_id);
                 if ($customer) {
@@ -385,13 +454,8 @@ class PosScreen extends Component
             }
         });
 
-        $this->cart = [];
-        $this->total = 0;
-        $this->customer_id = '';
-        $this->payment_method = 'cash';
-        $this->paid_amount = 0;
-        $this->transaction_number = '';
-        session()->forget('pos_cart'); 
+        // تنظيف الشاشة بعد الدفع
+        $this->clearCart();
         
         return redirect()->route('receipt.show', $saleId);
     }
@@ -402,23 +466,23 @@ class PosScreen extends Component
         $categories = Category::all();
 
         $productsQuery = Product::where('is_active', true)->with(['baseUnit', 'productUnits.unit']);
-        
+       
         if ($this->selected_category) {
             $productsQuery->where('category_id', $this->selected_category);
         }
 
         if (!empty($this->search)) {
             $searchTerms = explode(' ', trim($this->search));
-            
+           
             $productsQuery->where(function ($query) use ($searchTerms) {
                 foreach ($searchTerms as $term) {
                     $cleanTerm = trim($term);
-                    
+                   
                     if ($cleanTerm !== '') {
                         $normalizedTerm = str_replace(['أ', 'إ', 'آ', 'ا'], '_', $cleanTerm);
                         $normalizedTerm = str_replace(['ة', 'ه'], '_', $normalizedTerm);      
-                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm); 
-                        
+                        $normalizedTerm = str_replace(['ي', 'ى', 'ئ'], '_', $normalizedTerm);
+                       
                         $query->where('name', 'like', '%' . $normalizedTerm . '%');
                     }
                 }

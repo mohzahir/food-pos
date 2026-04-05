@@ -69,6 +69,11 @@
                 <div class="flex justify-between items-center">
                     <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
                         <span class="text-blue-600">🧾</span> الفاتورة الحالية
+                        @if($editing_sale_id)
+                            <span class="bg-amber-100 text-amber-700 text-[10px] px-2 py-1 rounded-md border border-amber-200 animate-pulse">
+                                ✏️ وضع تعديل الفاتورة #{{ $editing_sale_id }}
+                            </span>
+                        @endif
                     </h2>
                     <span class="bg-blue-50 text-blue-600 text-xs font-bold px-3 py-1 rounded-full border border-blue-100 shadow-sm">
                         {{ count($cart) }} أصناف
