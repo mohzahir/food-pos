@@ -119,6 +119,71 @@
     </div>
     @endif
 
+    @if($isRefundModalOpen)
+    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-opacity">
+        <div class="bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] w-full max-w-md overflow-hidden transform transition-all animate-fade-in-up border border-slate-200">
+            
+            <div class="bg-rose-50 p-5 flex justify-between items-center text-rose-800 border-b border-rose-100">
+                <h3 class="text-lg font-black flex items-center gap-2">
+                    <span>💵</span> تسوية مبالغ المرتجع
+                </h3>
+                <button wire:click="$set('isRefundModalOpen', false)" class="text-rose-400 hover:text-rose-800 bg-white hover:bg-rose-200 w-8 h-8 rounded-full flex items-center justify-center transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <div class="p-6 bg-slate-50 space-y-4">
+                
+                @if (session()->has('modal_error'))
+                    <div class="bg-rose-100 text-rose-700 p-3 rounded-xl text-xs font-bold text-center border border-rose-200">
+                        {{ session('modal_error') }}
+                    </div>
+                @endif
+
+                <div class="bg-white border-2 border-slate-100 p-4 rounded-2xl shadow-sm space-y-2">
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="font-bold text-slate-500">إجمالي قيمة المرتجع:</span>
+                        <span class="font-black text-slate-800" dir="ltr">{{ number_format($total_refund_amount, 0) }} SDG</span>
+                    </div>
+                    
+                    @if($debt_to_deduct > 0)
+                    <div class="flex justify-between items-center text-sm border-t border-slate-50 pt-2">
+                        <span class="font-bold text-emerald-600">خصم من ديون العميل:</span>
+                        <span class="font-black text-emerald-600" dir="ltr">- {{ number_format($debt_to_deduct, 0) }} SDG</span>
+                    </div>
+                    @endif
+                </div>
+
+                <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center">
+                    <p class="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">المبلغ المطلوب تسليمه للعميل الآن</p>
+                    <p class="text-3xl font-black text-blue-700" dir="ltr">{{ number_format($amount_to_pay_customer, 0) }} SDG</p>
+                </div>
+
+                @if($amount_to_pay_customer > 0)
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <div class="relative">
+                        <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-emerald-600 z-10">إرجاع من الدرج (كاش)</label>
+                        <input type="number" step="any" wire:model="refund_cash" onclick="this.select()" class="w-full border-2 border-emerald-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-emerald-500 outline-none font-black text-center text-emerald-700 bg-white">
+                    </div>
+                    
+                    <div class="relative">
+                        <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-indigo-600 z-10">إرجاع تحويل (بنكك)</label>
+                        <input type="number" step="any" wire:model="refund_bankak" onclick="this.select()" class="w-full border-2 border-indigo-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-indigo-500 outline-none font-black text-center text-indigo-700 bg-white">
+                    </div>
+                </div>
+                @endif
+
+                <div class="pt-4 mt-2 border-t border-slate-200">
+                    <button wire:click="confirmReturn" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-4 rounded-xl shadow-lg shadow-rose-200 transition-all transform hover:-translate-y-0.5 text-lg">
+                        تأكيد سحب المبلغ والإرجاع
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    @endif
+
 </div>
 
 <style>
