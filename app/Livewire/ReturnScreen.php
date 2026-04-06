@@ -146,6 +146,6 @@ class ReturnScreen extends Component
 
     public function render()
     {
-        return view('components.returns-screen');
+        return view('components.return-screen');
     }
 }
