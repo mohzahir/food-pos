@@ -160,22 +160,44 @@
                 </div>
 
                 @if($amount_to_pay_customer > 0)
-                <div class="grid grid-cols-2 gap-3 pt-2">
-                    <div class="relative">
-                        <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-emerald-600 z-10">إرجاع من الدرج (كاش)</label>
-                        <input type="number" step="any" wire:model="refund_cash" onclick="this.select()" class="w-full border-2 border-emerald-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-emerald-500 outline-none font-black text-center text-emerald-700 bg-white">
+                    <div class="grid grid-cols-2 gap-3 pt-2">
+                        <div class="relative">
+                            <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-emerald-600 z-10">إرجاع من الدرج (كاش)</label>
+                            <input type="number" step="any" wire:model.live.debounce.300ms="refund_cash" onclick="this.select()" class="w-full border-2 border-emerald-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-emerald-500 outline-none font-black text-center text-emerald-700 bg-white">
+                        </div>
+                        
+                        <div class="relative">
+                            <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-indigo-600 z-10">إرجاع تحويل (بنكك)</label>
+                            <input type="number" step="any" wire:model.live.debounce.300ms="refund_bankak" onclick="this.select()" class="w-full border-2 border-indigo-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-indigo-500 outline-none font-black text-center text-indigo-700 bg-white">
+                        </div>
                     </div>
-                    
-                    <div class="relative">
-                        <label class="absolute -top-2 left-2 bg-slate-50 px-1 text-[9px] font-black text-indigo-600 z-10">إرجاع تحويل (بنكك)</label>
-                        <input type="number" step="any" wire:model="refund_bankak" onclick="this.select()" class="w-full border-2 border-indigo-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-indigo-500 outline-none font-black text-center text-indigo-700 bg-white">
-                    </div>
-                </div>
-                @endif
+                
+                    @php
+                        $entered_sum = (float)$refund_cash + (float)$refund_bankak;
+                        $diff = $amount_to_pay_customer - $entered_sum;
+                    @endphp
 
+                    @if(round($diff, 2) > 0)
+                        <p class="text-xs font-bold text-amber-600 text-center mt-2 animate-pulse">
+                            ⚠️ متبقي {{ number_format($diff, 0) }} SDG يجب توزيعها لتكتمل العملية.
+                        </p>
+                    @elseif(round($diff, 2) < 0)
+                        <p class="text-xs font-bold text-rose-600 text-center mt-2 animate-pulse">
+                            ❌ المبلغ المدخل أكبر من المستحق بـ {{ number_format(abs($diff), 0) }} SDG!
+                        </p>
+                    @else
+                        <p class="text-xs font-black text-emerald-600 text-center mt-2">
+                            ✅ المجموع متطابق ومثالي.
+                        </p>
+                    @endif
+
+                @endif 
                 <div class="pt-4 mt-2 border-t border-slate-200">
-                    <button wire:click="confirmReturn" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-4 rounded-xl shadow-lg shadow-rose-200 transition-all transform hover:-translate-y-0.5 text-lg">
-                        تأكيد سحب المبلغ والإرجاع
+                    <button wire:click="confirmReturn" 
+                            @if(isset($diff) && round($diff, 2) !== 0.0) disabled @endif
+                            class="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black py-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 text-lg flex justify-center items-center gap-2">
+                        <span>تأكيد سحب المبلغ والإرجاع</span>
+                        <span wire:loading wire:target="confirmReturn" class="animate-spin">⏳</span>
                     </button>
                 </div>
 
